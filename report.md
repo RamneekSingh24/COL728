@@ -15,7 +15,7 @@ The longest prefix that is found may match to more than one regular expressions.
 
 ## Understanding the code
 
-The code inside the label `yy_match`` runs the DFA.
+The code inside the label `yy_match` runs the DFA.
 
 The array `yy_ec` maps each char to a character class.
 
