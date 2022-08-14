@@ -20,7 +20,7 @@ The code inside the label `yy_match` runs the DFA.
 The array `yy_ec` maps each char to a character class.
 
 Instead of storing a `2-D transition table`, the transition table is stored in a `1-D` array `yy_nxt`.  
-To the get `NextState(state, char)` we index the array using `yy_base[state] + yy_ec[char]`.
+To get the `NextState(state, char)` we index the array using `yy_base[state] + yy_ec[char]`.
 
 Actions for accepting states are identified using ids, which are stored in `yy_accept`.  
 If a state is non-accepting then `yy_accept[state] = 0`.
