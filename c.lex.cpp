@@ -1163,7 +1163,7 @@ YY_DECL
 				yy_act = yy_accept[yy_current_state];
 			} else {
 				printf("hii\n");
-				
+
 			}
 
 			YY_DO_BEFORE_ACTION;
