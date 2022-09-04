@@ -2369,7 +2369,7 @@ yyreduce:
      number reduced by.  */
 
   yyn = yyr1[yyn];
-
+  
   yystate = yypgoto[yyn - YYNTOKENS] + *yyssp;
   if (0 <= yystate && yystate <= YYLAST && yycheck[yystate] == *yyssp)
     yystate = yytable[yystate];
