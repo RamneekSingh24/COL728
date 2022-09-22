@@ -88,17 +88,17 @@ static int check_type(void);
 
 {L}{A}*					{ return check_type(); }
 
-{HP}{H}+{IS}?				{ return I_CONSTANT; }
-{NZ}{D}*{IS}?				{ return I_CONSTANT; }
-"0"{O}*{IS}?				{ return I_CONSTANT; }
-{CP}?"'"([^'\\\n]|{ES})+"'"		{ return I_CONSTANT; }
+{HP}{H}+{IS}?				{yylval.int_val = atoi(yytext); return I_CONSTANT; }
+{NZ}{D}*{IS}?				{yylval.int_val = atoi(yytext); return I_CONSTANT; }
+"0"{O}*{IS}?				{yylval.int_val = atoi(yytext); return I_CONSTANT; }
+{CP}?"'"([^'\\\n]|{ES})+"'"		{yylval.int_val = atoi(yytext); return I_CONSTANT; }
 
-{D}+{E}{FS}?				{ return F_CONSTANT; }
-{D}*"."{D}+{E}?{FS}?			{ return F_CONSTANT; }
-{D}+"."{E}?{FS}?			{ return F_CONSTANT; }
-{HP}{H}+{P}{FS}?			{ return F_CONSTANT; }
-{HP}{H}*"."{H}+{P}{FS}?			{ return F_CONSTANT; }
-{HP}{H}+"."{P}{FS}?			{ return F_CONSTANT; }
+{D}+{E}{FS}?				{yylval.int_val = atof(yytext); return F_CONSTANT; }
+{D}*"."{D}+{E}?{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
+{D}+"."{E}?{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
+{HP}{H}+{P}{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
+{HP}{H}*"."{H}+{P}{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
+{HP}{H}+"."{P}{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
 
 ({SP}?\"([^"\\\n]|{ES})*\"{WS}*)+	{ return STRING_LITERAL; }
 
@@ -187,6 +187,12 @@ static int check_type(void)
     case ENUMERATION_CONSTANT:        /* previously defined */
         return ENUMERATION_CONSTANT;
     default:                          /* includes undefined */
+        yylval.str_val = new char[yyleng];
+        int i;
+        for (i = 0; i < yyleng; i++) {
+            yylval.str_val[i] = yytext[i];
+        }
+        yylval.str_val[yyleng] = '\0';
         return IDENTIFIER;
     }
 }

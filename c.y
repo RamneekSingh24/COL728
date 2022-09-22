@@ -1,7 +1,18 @@
+%require "3.2"
+
+%code requires {
+	#include <iostream>
+	#include "ast.h"
+}
+
+
 %{
 #include <cstdio>
 #include <iostream>
+#include "ast.h"
 using namespace std;
+
+yyTU* topLevelTU = new yyTU();
 
 // stuff from flex that bison needs to know about:
 extern "C" int yylex();
@@ -10,7 +21,34 @@ extern "C" FILE *yyin;
  
 void yyerror(const char *s);
 %}
-%token	IDENTIFIER I_CONSTANT F_CONSTANT STRING_LITERAL FUNC_NAME SIZEOF
+
+%union {
+  int int_val;
+  float float_val;
+  char* str_val;   // "string type has a non-trivial copy constructor"
+  yyAST* ast_node;
+  UnaryOp un_op;
+}
+
+%type <ast_node> translation_unit
+%type <ast_node> external_declaration
+%type <ast_node> function_definition
+%type <ast_node> declaration_specifiers declaration type_specifier direct_declarator
+%type <ast_node> parameter_list parameter_declaration declarator parameter_type_list
+%type <ast_node> compound_statement block_item_list block_item statement
+%type <ast_node> labeled_statement expression_statement selection_statement iteration_statement jump_statement
+%type <ast_node> expression assignment_expression conditional_expression
+%type <ast_node> logical_or_expression logical_and_expression inclusive_or_expression  exclusive_or_expression
+%type <ast_node> and_expression equality_expression relational_expression shift_expression additive_expression
+%type <ast_node> multiplicative_expression cast_expression unary_expression postfix_expression primary_expression
+%type <un_op>    unary_operator
+%type <ast_node> argument_expression_list constant
+
+
+%token	<str_val> IDENTIFIER STRING_LITERAL FUNC_NAME
+%token  <int_val> I_CONSTANT
+%token  <float_val> F_CONSTANT
+%token  SIZEOF
 %token	PTR_OP INC_OP DEC_OP LEFT_OP RIGHT_OP LE_OP GE_OP EQ_OP NE_OP
 %token	AND_OP OR_OP MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN
 %token	SUB_ASSIGN LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN
@@ -30,17 +68,19 @@ void yyerror(const char *s);
 %start translation_unit
 %%
 
+
+
 primary_expression
-	: IDENTIFIER
-	| constant
+	: IDENTIFIER {$$ = new yyIdentifier($1);}
+	| constant   {$$ = $1;}
 	| string
-	| '(' expression ')'
+	| '(' expression ')' {$$ = $2;}
 	| generic_selection
 	;
 
 constant
-	: I_CONSTANT		/* includes character_constant */
-	| F_CONSTANT
+	: I_CONSTANT	{$$ = new yyIntegerLiteral($1);}	    /* includes character_constant */
+	| F_CONSTANT    {$$ = new yyFloatLiteral($1);}
 	| ENUMERATION_CONSTANT	/* after it has been defined as such */
 	;
 
@@ -68,14 +108,26 @@ generic_association
 	;
 
 postfix_expression
-	: primary_expression
+	: primary_expression  {$$ = $1;}
 	| postfix_expression '[' expression ']'
 	| postfix_expression '(' ')'
+	{
+	    $$ = new yyBinaryOp($1, BinaryOp::FUNC_CALL, new yyArgumentExpressionList());
+	}
 	| postfix_expression '(' argument_expression_list ')'
+	{
+	    $$ = new yyBinaryOp($1, BinaryOp::FUNC_CALL, $3);
+	}
 	| postfix_expression '.' IDENTIFIER
 	| postfix_expression PTR_OP IDENTIFIER
 	| postfix_expression INC_OP
+    {
+        $$ = new yyUnaryOp(UnaryOp::POST_INC, $1);
+    }
 	| postfix_expression DEC_OP
+    {
+        $$ = new yyUnaryOp(UnaryOp::POST_DEC, $1);
+    }
 	| '(' type_name ')' '{' initializer_list '}'
 	| '(' type_name ')' '{' initializer_list ',' '}'
 	;
@@ -86,10 +138,19 @@ argument_expression_list
 	;
 
 unary_expression
-	: postfix_expression
+	: postfix_expression {$$ = $1;}
 	| INC_OP unary_expression
+{
+    $$ = new yyUnaryOp(UnaryOp::PRE_INC, $2);
+}
 	| DEC_OP unary_expression
+{
+    $$ = new yyUnaryOp(UnaryOp::PRE_DEC, $2);
+}
 	| unary_operator cast_expression
+{
+    $$ = new yyUnaryOp($1, $2);
+}
 	| SIZEOF unary_expression
 	| SIZEOF '(' type_name ')'
 	| ALIGNOF '(' type_name ')'
@@ -98,82 +159,136 @@ unary_expression
 unary_operator
 	: '&'
 	| '*'
-	| '+'
-	| '-'
-	| '~'
-	| '!'
+	| '+' {$$ = UnaryOp::PL;}
+	| '-' {$$ = UnaryOp::NEG;}
+	| '~' {$$ = UnaryOp::NOT;}
+	| '!' {$$ = UnaryOp::LOGICAL_NOT;}
 	;
 
 cast_expression
-	: unary_expression
+	: unary_expression {$$ = $1;}
 	| '(' type_name ')' cast_expression
 	;
 
 multiplicative_expression
-	: cast_expression
+	: cast_expression {$$ = $1;}
 	| multiplicative_expression '*' cast_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::MULT, $3);
+	}
 	| multiplicative_expression '/' cast_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::DIV, $3);
+	}
 	| multiplicative_expression '%' cast_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::MOD, $3);
+	}
 	;
 
 additive_expression
-	: multiplicative_expression
+	: multiplicative_expression {$$ = $1;}
 	| additive_expression '+' multiplicative_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::PLUS, $3);
+	}
 	| additive_expression '-' multiplicative_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::MINUS, $3);
+	}
 	;
 
 shift_expression
-	: additive_expression
+	: additive_expression {$$ = $1;}
 	| shift_expression LEFT_OP additive_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::LSHIFT, $3);
+	}
 	| shift_expression RIGHT_OP additive_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::RSHIFT, $3);
+	}
 	;
 
 relational_expression
-	: shift_expression
+	: shift_expression {$$ = $1;}
 	| relational_expression '<' shift_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::LT, $3);
+	}
 	| relational_expression '>' shift_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::GT, $3);
+	}
 	| relational_expression LE_OP shift_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::LTE, $3);
+	}
 	| relational_expression GE_OP shift_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::GTE, $3);
+	}
 	;
 
 equality_expression
-	: relational_expression
+	: relational_expression {$$ = $1;}
 	| equality_expression EQ_OP relational_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::EQUAL, $3);
+	}
 	| equality_expression NE_OP relational_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::NOT_EQUAL, $3);
+	}
 	;
 
 and_expression
-	: equality_expression
+	: equality_expression {$$ = $1;}
 	| and_expression '&' equality_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::AND, $3);
+	}
 	;
 
 exclusive_or_expression
-	: and_expression
+	: and_expression {$$ = $1;}
 	| exclusive_or_expression '^' and_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::XOR, $3);
+	}
 	;
 
 inclusive_or_expression
-	: exclusive_or_expression
+	: exclusive_or_expression {$$ = $1;}
 	| inclusive_or_expression '|' exclusive_or_expression
+	{
+       $$ = new yyBinaryOp($1, BinaryOp::OR, $3);
+	}
 	;
 
 logical_and_expression
-	: inclusive_or_expression
+	: inclusive_or_expression {$$ = $1;}
 	| logical_and_expression AND_OP inclusive_or_expression
+    {
+       $$ = new yyBinaryOp($1, BinaryOp::LOGICAL_AND, $3);
+    }
 	;
 
 logical_or_expression
-	: logical_and_expression
+	: logical_and_expression {$$ = $1;}
 	| logical_or_expression OR_OP logical_and_expression
+	{
+	   $$ = new yyBinaryOp($1, BinaryOp::LOGICAL_OR, $3);
+	}
 	;
 
 conditional_expression
-	: logical_or_expression
+	: logical_or_expression {$$ = $1;}
 	| logical_or_expression '?' expression ':' conditional_expression
 	;
 
 assignment_expression
-	: conditional_expression
+	: conditional_expression {$$ = $1;}
 	| unary_expression assignment_operator assignment_expression
 	;
 
@@ -192,8 +307,14 @@ assignment_operator
 	;
 
 expression
-	: assignment_expression
+	: assignment_expression {$$ = new yyExpression($1);}
 	| expression ',' assignment_expression
+	{
+	    yyExpression* dollar_1_casted = dynamic_cast<yyExpression*> ($1);
+	    assert(dollar_1_casted != nullptr);
+	    dollar_1_casted->addAssignmentExpression($3);
+	    $$ = $1;
+	}
 	;
 
 constant_expression
@@ -210,7 +331,7 @@ declaration_specifiers
 	: storage_class_specifier declaration_specifiers
 	| storage_class_specifier
 	| type_specifier declaration_specifiers
-	| type_specifier
+	| type_specifier {$$ = new yyDeclSpecifiers($1);}
 	| type_qualifier declaration_specifiers
 	| type_qualifier
 	| function_specifier declaration_specifiers
@@ -239,12 +360,12 @@ storage_class_specifier
 	;
 
 type_specifier
-	: VOID
+	: VOID  {$$ = new yyTypeSpecifier(yySimpleType::TYPE_VOID);}
 	| CHAR
 	| SHORT
-	| INT
+	| INT   {$$ = new yyTypeSpecifier(yySimpleType::TYPE_INT);}
 	| LONG
-	| FLOAT
+	| FLOAT {$$ = new yyTypeSpecifier(yySimpleType::TYPE_FLOAT);}
 	| DOUBLE
 	| SIGNED
 	| UNSIGNED
@@ -342,7 +463,7 @@ declarator
 	;
 
 direct_declarator
-	: IDENTIFIER
+	: IDENTIFIER      { $$ = new yyDirectDeclarator(new yyIdentifier($1)) ;}
 	| '(' declarator ')'
 	| direct_declarator '[' ']'
 	| direct_declarator '[' '*' ']'
@@ -353,8 +474,8 @@ direct_declarator
 	| direct_declarator '[' type_qualifier_list assignment_expression ']'
 	| direct_declarator '[' type_qualifier_list ']'
 	| direct_declarator '[' assignment_expression ']'
-	| direct_declarator '(' parameter_type_list ')'
-	| direct_declarator '(' ')'
+	| direct_declarator '(' parameter_type_list ')' {$$ = new yyDirectDeclarator($1, $3);}
+	| direct_declarator '(' ')' {$$ = new yyDirectDeclarator($1, new yyParameterList());}
 	| direct_declarator '(' identifier_list ')'
 	;
 
@@ -373,16 +494,22 @@ type_qualifier_list
 
 parameter_type_list
 	: parameter_list ',' ELLIPSIS
-	| parameter_list
+	| parameter_list {$$ = $1;}
 	;
 
 parameter_list
-	: parameter_declaration
+	: parameter_declaration {$$ = new yyParameterList($1);}
 	| parameter_list ',' parameter_declaration
+	{
+	  yyParameterList* dollar_1_casted = dynamic_cast<yyParameterList*> ($1);
+      assert(dollar_1_casted != nullptr);
+	  dollar_1_casted->addParam($3);
+	  $$ = $1;
+	}
 	;
 
 parameter_declaration
-	: declaration_specifiers declarator
+	: declaration_specifiers declarator {$$ = new yyParameterDecl($1, $2);}
 	| declaration_specifiers abstract_declarator
 	| declaration_specifiers
 	;
@@ -461,7 +588,7 @@ static_assert_declaration
 statement
 	: labeled_statement
 	| compound_statement
-	| expression_statement
+	| expression_statement {$$ = $1;}
 	| selection_statement
 	| iteration_statement
 	| jump_statement
@@ -474,23 +601,32 @@ labeled_statement
 	;
 
 compound_statement
-	: '{' '}'
+	: '{' '}'                   {$$ = new yyCompoundStatement();}
 	| '{'  block_item_list '}'
+    {
+        yyCompoundStatement* cmpndStatement = new yyCompoundStatement();
+
+        for (auto item: $2->nodes) {
+            cmpndStatement->addItem(item);
+        }
+
+        $$ = cmpndStatement;
+    }
 	;
 
 block_item_list
-	: block_item
-	| block_item_list block_item
+	: block_item {$$ = new yyAST(); $$->addNode($1);}
+	| block_item_list block_item {$1->addNode($2); $$ = $1;}
 	;
 
 block_item
-	: declaration
-	| statement
+	: declaration {$$ = $1;}
+	| statement   {$$ = $1;}
 	;
 
 expression_statement
-	: ';'
-	| expression ';'
+	: ';'  {$$ = new yyExpression();}
+	| expression ';'  {$$ = $1;}
 	;
 
 selection_statement
@@ -518,17 +654,37 @@ jump_statement
 
 translation_unit
 	: external_declaration
+	{
+	    topLevelTU->addDecl($1);
+        $$ = topLevelTU;
+    }
 	| translation_unit external_declaration
+	{
+	    topLevelTU->addDecl($2);
+        $$ = topLevelTU;
+    }
 	;
 
 external_declaration
 	: function_definition
+	{
+	    $$ = $1;
+	}
 	| declaration
+	{
+	    std::cout << "TODO: external_declaration prod 2\n";
+	    $$ = new yyDeclaration();
+	    // $$ = $1;
+	}
 	;
 
 function_definition
 	: declaration_specifiers declarator declaration_list compound_statement
+
 	| declaration_specifiers declarator compound_statement
+	{
+        $$ = new yyFunctionDefinition($1, $2, $3);
+	}
 	;
 
 declaration_list
