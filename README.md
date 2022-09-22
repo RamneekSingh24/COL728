@@ -95,7 +95,7 @@ We have two default tables `yydefact` and `yydefgoto` that are used to compress 
 The `yyparse` function maintains the current state in the `yystate` variable and maintains two stacks, one for the states and one for the semantic values obtained by the user specified actions.  
 The code starts by initializing the state and stack pointers and goes to the label `yysetstate`.  
 In case of no errors, the flow of the code is as shown in the figure.   
-![](l1p2.png)
+![](img/l1p2.png)
 
 The code breaks out of the flow loop when it reaches the termination state `YYFINAL`.  
 
