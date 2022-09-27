@@ -93,12 +93,12 @@ static int check_type(void);
 "0"{O}*{IS}?				{yylval.int_val = atoi(yytext); return I_CONSTANT; }
 {CP}?"'"([^'\\\n]|{ES})+"'"		{yylval.int_val = atoi(yytext); return I_CONSTANT; }
 
-{D}+{E}{FS}?				{yylval.int_val = atof(yytext); return F_CONSTANT; }
-{D}*"."{D}+{E}?{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
-{D}+"."{E}?{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
-{HP}{H}+{P}{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
-{HP}{H}*"."{H}+{P}{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
-{HP}{H}+"."{P}{FS}?			{yylval.int_val = atof(yytext); return F_CONSTANT; }
+{D}+{E}{FS}?				{yylval.float_val = atof(yytext); return F_CONSTANT; }
+{D}*"."{D}+{E}?{FS}?			{yylval.float_val = atof(yytext);  return F_CONSTANT; }
+{D}+"."{E}?{FS}?			{yylval.float_val = atof(yytext); return F_CONSTANT; }
+{HP}{H}+{P}{FS}?			{yylval.float_val = atof(yytext); return F_CONSTANT; }
+{HP}{H}*"."{H}+{P}{FS}?			{yylval.float_val = atof(yytext); ;return F_CONSTANT; }
+{HP}{H}+"."{P}{FS}?			{yylval.float_val = atof(yytext); return F_CONSTANT; }
 
 ({SP}?\"([^"\\\n]|{ES})*\"{WS}*)+	{ return STRING_LITERAL; }
 

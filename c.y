@@ -11,6 +11,7 @@
 #include <iostream>
 #include "ast.h"
 using namespace std;
+using namespace ast;
 
 yyTU* topLevelTU = new yyTU();
 
@@ -26,8 +27,8 @@ void yyerror(const char *s);
   int int_val;
   float float_val;
   char* str_val;   // "string type has a non-trivial copy constructor"
-  yyAST* ast_node;
-  UnaryOp un_op;
+  ast::yyAST* ast_node;
+  ast::UnaryOp un_op;
 }
 
 %type <ast_node> translation_unit

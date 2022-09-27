@@ -11,7 +11,6 @@ extern "C" int yylex();
 int yyparse();
 extern "C" FILE *yyin;
 
-extern yyTU* topLevelTU;
 
 static void usage()
 {
@@ -19,10 +18,16 @@ static void usage()
 }
 
 using namespace std;
+using namespace ast;
 
-int
-main(int argc, char **argv)
+extern yyTU* topLevelTU;
+
+
+
+
+int main(int argc, char **argv)
 {
+
   if (argc != 2) {
     usage();
     exit(1);
@@ -41,8 +46,13 @@ main(int argc, char **argv)
 
 //  std::cout << topLevelTU->nodes[4]->nodes[1]->nodes[1]->nodes[0]->nodes[1]->nodes[0]->name() << "\n";
 
-  topLevelTU->print();
+  if (ret != 0) {
+      std::cerr << "Compilation failed!" << std::endl;
+  }
+  else {
+      topLevelTU->print();
+      std::cout << std::flush;
+  }
 
-  printf("retv = %d\n", ret);
-  exit(0);
+
 }
