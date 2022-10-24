@@ -31,8 +31,12 @@ extern int sym_type(const char *);  /* returns type from symbol table */
 
 #define sym_type(identifier) IDENTIFIER /* with no symbol table, fake it */
 
+/* TODO: yytext -> yytextsafe() everywhere */
+
 static void comment(void);
 static int check_type(void);
+static char* yytextsafe(void);
+
 #define YY_DECL extern "C" int yylex()
 %}
 
@@ -100,7 +104,7 @@ static int check_type(void);
 {HP}{H}*"."{H}+{P}{FS}?			{yylval.float_val = atof(yytext); ;return F_CONSTANT; }
 {HP}{H}+"."{P}{FS}?			{yylval.float_val = atof(yytext); return F_CONSTANT; }
 
-({SP}?\"([^"\\\n]|{ES})*\"{WS}*)+	{ return STRING_LITERAL; }
+({SP}?\"([^"\\\n]|{ES})*\"{WS}*)+	{yylval.str_val = yytextsafe() ;return STRING_LITERAL; }
 
 "..."					{ return ELLIPSIS; }
 ">>="					{ return RIGHT_ASSIGN; }
@@ -176,6 +180,17 @@ static void comment(void)
                 break;
         }
     yyerror("unterminated comment");
+}
+
+static char* yytextsafe(void) {
+//     printf("%s, %d\n", yytext, yyleng);
+    char* rtn = new char[yyleng + 1];
+    int i;
+    for (i = 0; i < yyleng; i++) {
+        rtn[i] = yytext[i];
+    }
+    rtn[yyleng] = '\0';
+    return rtn;
 }
 
 static int check_type(void)

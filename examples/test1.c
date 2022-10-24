@@ -1,6 +1,9 @@
-void empty() { }
+void empty() {(3 > 4) || 4 > 3;}
 
-void empty1() { }
+int empty1() {
+    // d + 2;
+    return 3;
+}
 
 
 void simple_arith() {

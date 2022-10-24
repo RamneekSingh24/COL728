@@ -1,5 +1,8 @@
-cc: cc.cpp c.tab.cpp c.lex.cpp ast.h
-	g++ -std=c++11 c.tab.cpp c.lex.cpp cc.cpp -lm -ll  -o $@
+cc: cc.cpp c.tab.cpp c.lex.cpp ast.h SymbolTable.cpp SymbolTable.h
+	g++ -g -std=c++17 c.tab.cpp c.lex.cpp cc.cpp SymbolTable.cpp -lm -ll  -o $@
+
+dbg:
+	./cc examples/test1.c
 
 
 c.tab.cpp c.tab.hpp: c.y
