@@ -18,7 +18,7 @@ static void usage()
 using namespace std;
 using namespace ast;
 
-extern yyTU *topLevelTU;
+yyTU *topLevelTU = new yyTU();
 
 int main(int argc, char **argv)
 {
@@ -48,14 +48,6 @@ int main(int argc, char **argv)
 
   int ret = yyparse();
 
-  //  cout << (topLevelTU->nodes.size()) << "\n";
-
-  //  for (auto node : topLevelTU->nodes) {
-  //      std:: cout << node->name() << "\n";
-  //  }
-
-  //  std::cout << topLevelTU->nodes[4]->nodes[1]->nodes[1]->nodes[0]->nodes[1]->nodes[0]->name() << "\n";
-
   if (ret != 0)
   {
     std::cerr << "Compilation failed!" << std::endl;
@@ -70,10 +62,10 @@ int main(int argc, char **argv)
     else
     {
       assert(symTable->table.size() == 1);
-      if (verbose)
-      {
-        topLevelTU->print();
-      }
+      // if (verbose)
+      // {
+      //   topLevelTU->print();
+      // }
       SymbolTable<yyAST *> *symTable = new SymbolTable<yyAST *>();
 
       if (!topLevelTU->typeCheck(symTable))
@@ -83,14 +75,33 @@ int main(int argc, char **argv)
       else
       {
         assert(symTable->table.size() == 1);
-        for (auto symbol : symTable->table[0])
-        {
-          std::cout << symbol.first << ": " << symbol.second->my_type->typeStr() << "\n";
-        }
+
         if (verbose)
         {
+          for (auto symbol : symTable->table[0])
+          {
+            std::cout << symbol.first << ": " << symbol.second->my_type->typeStr() << "\n";
+          }
           std::cout << "Compilation successful!" << std::endl;
           topLevelTU->print();
+        }
+
+        CodeGenContext *context = new CodeGenContext();
+
+        topLevelTU->codeGen(context);
+
+        if (!verifyModule(*context->module, &errs()))
+        {
+          if (verbose)
+          {
+            std::cout << "Code generation successful!" << std::endl;
+          }
+          // only print the code in non-verbose mode
+          context->module->print(errs(), nullptr);
+        }
+        else
+        {
+          std::cerr << "Code generation failed!" << std::endl;
         }
         std::cout << std::flush;
       }

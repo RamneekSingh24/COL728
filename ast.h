@@ -2,15 +2,65 @@
 #include <iostream>
 #include <unordered_map>
 #include <set>
+#include <memory>
 #include "SymbolTable.h"
+#include <llvm/ADT/APFloat.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/IR/BasicBlock.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/ExecutionEngine/ExecutionEngine.h>
+#include <llvm/ExecutionEngine/GenericValue.h>
 
 #ifndef AST_H
 #define AST_H
 
+// TODO: Compact the AST for codegen (remove unnecessary nodes)
+// TODO: HINT : declare global variables / functions in header file as static. Not working !!
+// recursive calls from this file a getting different values
+// TODO: check no seg faults in case of err recovery
+// TODO: unnecessary load of lhs in assignment operations: `t = b`
+
 extern int yylineno;
+
+using namespace llvm;
 
 namespace ast
 {
+
+    struct CodeGenContext
+    {
+        std::unique_ptr<LLVMContext> context;
+        std::unique_ptr<Module> module;
+        std::unique_ptr<IRBuilder<>> builder;
+        std::unordered_map<std::string, Value *> *stringLiterals;
+        SymbolTable<llvm::Value *> *varTable;
+        SymbolTable<llvm::Function *> *funcTable;
+
+        CodeGenContext()
+        {
+            context = std::make_unique<LLVMContext>();
+            module = std::make_unique<Module>("col728", *context);
+            builder = std::make_unique<IRBuilder<>>(*context);
+            stringLiterals = new std::unordered_map<std::string, Value *>();
+            varTable = new SymbolTable<llvm::Value *>();
+            funcTable = new SymbolTable<llvm::Function *>();
+        }
+    };
+
+    // static auto context = std::make_unique<LLVMContext>();
+    // static auto module = std::make_unique<Module>("col728", *context);
+    // static auto builder = std::make_unique<IRBuilder<>>(*context);
+    // static std::unordered_map<std::string, Value *> stringLiterals;
+
+    // static SymbolTable<llvm::Value *> *varTable = new SymbolTable<llvm::Value *>();
+    // static SymbolTable<llvm::Function *> *functionTable = new SymbolTable<llvm::Function *>();
 
     enum yySimpleType
     {
@@ -32,6 +82,10 @@ namespace ast
         virtual bool equals(Type *other)
         {
             return this->typeStr() == other->typeStr();
+        }
+        virtual llvm::Type *llvmType(CodeGenContext *context)
+        {
+            return nullptr;
         }
     };
 
@@ -61,6 +115,25 @@ namespace ast
                 return "...";
             }
             return "error";
+        }
+        llvm::Type *llvmType(CodeGenContext *context)
+        {
+            switch (simpleType)
+            {
+            case TYPE_INT:
+                return llvm::Type::getInt32Ty(*context->context);
+            case TYPE_VOID:
+                return llvm::Type::getVoidTy(*context->context);
+            case TYPE_FLOAT:
+                return llvm::Type::getFloatTy(*context->context);
+            case TYPE_CHAR:
+                return llvm::Type::getInt8Ty(*context->context);
+            case TYPE_BOOL:
+                return llvm::Type::getInt1Ty(*context->context);
+            case TYPE_ELLIPSIS:
+                return nullptr;
+            }
+            return nullptr;
         }
     };
 
@@ -93,6 +166,15 @@ namespace ast
             typeStr += simpleType.typeStr();
             return typeStr;
         }
+        llvm::Type *llvmType(CodeGenContext *context)
+        {
+            llvm::Type *type = simpleType.llvmType(context);
+            for (int i = 0; i < pointer_cnt; i++)
+            {
+                type = type->getPointerTo();
+            }
+            return type;
+        }
     };
 
     class FunctionType : public Type
@@ -118,6 +200,31 @@ namespace ast
             typeStr += ")";
             return typeStr;
         }
+
+        llvm::FunctionType *llvmFuncType(CodeGenContext *context)
+        {
+            std::vector<llvm::Type *> paramTypesLLVM;
+            bool containsEllipsis = false;
+            for (auto type : paramTypes)
+            {
+                if (type->typeStr() == "...")
+                {
+                    containsEllipsis = true;
+                }
+                else
+                {
+                    auto llvm_type = type->llvmType(context);
+                    assert(llvm_type != nullptr);
+                    paramTypesLLVM.push_back(llvm_type);
+                }
+            }
+            return llvm::FunctionType::get(returnType->llvmType(context), paramTypesLLVM, containsEllipsis);
+        }
+
+        llvm::Type *llvmType(CodeGenContext *context)
+        {
+            return llvmFuncType(context);
+        }
     };
 
     // template <typename T>
@@ -129,6 +236,8 @@ namespace ast
         bool dont_drop_env = false;
 
         Type *my_type = new SimpleType(TYPE_VOID);
+
+        LLVMValueRef llvm_value = nullptr;
 
         yyAST() : line_no(yylineno){};
 
@@ -178,6 +287,15 @@ namespace ast
             my_type = new SimpleType(TYPE_VOID);
             return result;
         }
+
+        virtual Value *codeGen(CodeGenContext *cgenContext)
+        {
+            for (auto node : nodes)
+            {
+                node->codeGen(cgenContext);
+            }
+            return nullptr;
+        }
     };
 
     class yyTU : public yyAST
@@ -214,6 +332,20 @@ namespace ast
             }
             my_type = new SimpleType(TYPE_VOID);
             return result;
+        }
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            auto varTable = cgenContext->varTable;
+            auto funcTable = cgenContext->funcTable;
+
+            varTable->createNewEnv();
+            funcTable->createNewEnv();
+
+            for (auto node : nodes)
+            {
+                node->codeGen(cgenContext);
+            }
+            return nullptr;
         }
     };
 
@@ -255,6 +387,8 @@ namespace ast
             std::cout << std::string(2 * indent, ' ') << "Type: " << typeName() << "\n";
         }
         // Base implementation of envCheck will work.
+        // Base implementation of typeCheck will work.
+        // Base implementation of codeGen will work.
     };
 
     enum TypeQualifier
@@ -290,6 +424,8 @@ namespace ast
             std::cout << std::string(2 * indent, ' ') << "TypeQualifier: " << typeQualifierName() << "\n";
         }
         // Base implementation of envCheck will work.
+        // Base implementation of typeCheck will work.
+        // Base implementation of codeGen will work.
     };
 
     class yyDeclSpecifiers : public yyAST
@@ -321,6 +457,8 @@ namespace ast
             return nullptr;
         }
         // Base implementation of envCheck will work.
+        // Base Implementation of typeCheck will work.
+        // Base Implementation of codeGen will work.
     };
 
     class yyIdentifier : public yyAST
@@ -360,6 +498,17 @@ namespace ast
             my_type = decl->my_type;
             return true;
         }
+
+        // at this stage we are storing all declared variables in the stack
+        // the optimization stages will fix this.
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            auto stack_loc = cgenContext->varTable->getFromEnv(id);
+            assert(stack_loc != nullptr); // errors should have been detected by semantic analysis.
+            assert(my_type != nullptr);
+            auto llvm_type = my_type->llvmType(cgenContext);
+            return cgenContext->builder->CreateLoad(llvm_type, stack_loc, "local_var");
+        }
     };
 
     class yyIntegerLiteral : public yyAST
@@ -389,6 +538,10 @@ namespace ast
         {
             my_type = new SimpleType(TYPE_INT);
             return true;
+        }
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            return ConstantInt::get(*(cgenContext->context), APInt(32, v, true));
         }
     };
 
@@ -420,6 +573,10 @@ namespace ast
             my_type = new SimpleType(TYPE_FLOAT);
             return true;
         }
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            return ConstantFP::get(*(cgenContext->context), APFloat(v));
+        }
     };
 
     class yyStringLiteral : public yyAST
@@ -448,6 +605,17 @@ namespace ast
         {
             my_type = new PointerType(1, SimpleType(TYPE_CHAR));
             return true;
+        }
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            auto stringLiterals = cgenContext->stringLiterals;
+            auto builder = cgenContext->builder.get();
+            auto module = cgenContext->module.get();
+            if (stringLiterals->count(v) == 0)
+            {
+                stringLiterals->operator[](v) = builder->CreateGlobalStringPtr(v, "string_literal", 0, module);
+            }
+            return stringLiterals->operator[](v);
         }
     };
 
@@ -650,6 +818,10 @@ namespace ast
             return "yyDeclaration";
         }
 
+        std::string declID;
+        Type *declType;
+        bool isFunctionDecl = false;
+
     public:
         yyDeclaration(yyAST *declSpecs, yyAST *initDeclList)
         {
@@ -689,11 +861,18 @@ namespace ast
             if (directDecl->nodes.size() == 1)
             {
                 // simple declarator
+                isFunctionDecl = false;
                 idNode->my_type = type;
             }
             else
             {
+                isFunctionDecl = true;
                 // function declarator
+                if (symTable->table.size() != 1)
+                {
+                    std::cerr << "[Line No " << this->line_no << "] Error: Function declaration must be global" << std::endl;
+                }
+
                 yyParameterList *params = dynamic_cast<yyParameterList *>(directDecl->nodes[1]);
                 assert(params != nullptr);
                 std::vector<Type *> paramTypes;
@@ -728,6 +907,9 @@ namespace ast
                 idNode->my_type = new FunctionType(paramTypes, type);
             }
 
+            declID = idNode->id;
+            declType = idNode->my_type;
+
             if (symTable->addToEnv(id, idNode))
             {
                 return true;
@@ -739,6 +921,41 @@ namespace ast
                           << "previous declaration was at line no: " << symTable->getFromEnv(id)->line_no << std::endl;
                 return false;
             }
+        }
+
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            auto varTable = cgenContext->varTable;
+            auto functionTable = cgenContext->funcTable;
+            assert(declType != nullptr);
+            if (isFunctionDecl)
+            {
+                assert(varTable->table.size() == 1);      // should be at TU level
+                assert(functionTable->table.size() == 1); // just for safety
+                FunctionType *funcType = dynamic_cast<FunctionType *>(declType);
+                assert(funcType != nullptr);
+                auto llvmFuncType = funcType->llvmFuncType(cgenContext);
+                Function *func = Function::Create(llvmFuncType, Function::ExternalLinkage, declID, cgenContext->module.get());
+                functionTable->addToEnv(declID, func);
+            }
+            else
+            {
+
+                if (varTable->table.size() == 1) // global variable
+                {
+
+                    GlobalVariable *globalVar = new GlobalVariable(*(cgenContext->module), declType->llvmType(cgenContext), false,
+                                                                   GlobalValue::ExternalLinkage, nullptr, declID);
+                    varTable->addToEnv(declID, globalVar);
+                }
+                else
+                {
+                    // local variable
+                    AllocaInst *alloca = cgenContext->builder->CreateAlloca(declType->llvmType(cgenContext), nullptr, declID);
+                    varTable->addToEnv(declID, alloca);
+                }
+            }
+            return nullptr;
         }
     };
 
@@ -774,6 +991,19 @@ namespace ast
             }
             this->my_type = nodes[nodes.size() - 1]->my_type;
             return ret;
+        }
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            if (nodes.size() == 0)
+            {
+                return nullptr;
+            }
+            Value *val;
+            for (auto node : nodes)
+            {
+                val = node->codeGen(cgenContext);
+            }
+            return val;
         }
     };
 
@@ -879,6 +1109,23 @@ namespace ast
             }
             return ret;
         }
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            if (!dont_create_new_env)
+            {
+                cgenContext->varTable->createNewEnv();
+            }
+            Value *val;
+            for (auto node : nodes)
+            {
+                val = node->codeGen(cgenContext);
+            }
+            if (!dont_create_new_env)
+            {
+                cgenContext->varTable->popEnv();
+            }
+            return val;
+        }
     };
 
     class yyFunctionDefinition : public yyAST
@@ -925,6 +1172,10 @@ namespace ast
             return ret;
         }
 
+        Type *declType;
+        std::string declID;
+        std::vector<std::string> argNames;
+
         bool typeCheck(SymbolTable<yyAST *> *symTable)
         {
             bool ret = true;
@@ -964,6 +1215,10 @@ namespace ast
 
                 if (ellipsis != nullptr)
                 {
+                    // Ellipsis using inside def not supported yet,
+                    // so we don't allow it even in the argument list..
+                    std::cerr << "Fatal: Ellipsis not supported in function definition yet.." << std::endl;
+                    exit(1);
                     // ellipsis = void*
                     paramTypes.push_back(new PointerType(1, SimpleType(TYPE_VOID)));
                 }
@@ -990,7 +1245,7 @@ namespace ast
                     yyIdentifier *paramIdNode = dynamic_cast<yyIdentifier *>(paramDirectDecl->nodes[0]);
                     assert(paramIdNode != nullptr);
                     std::string paramId = paramIdNode->id;
-
+                    argNames.push_back(paramId);
                     paramDecl->my_type = paramType;
 
                     symTable->addToEnv(paramId, paramDecl);
@@ -998,6 +1253,9 @@ namespace ast
             }
 
             idNode->my_type = new FunctionType(paramTypes, type);
+
+            declID = idNode->id;
+            declType = idNode->my_type;
 
             // Add function to symbol table, for recursive function calls in the body
             symTable->addToEnv(idNode->id, idNode);
@@ -1007,6 +1265,7 @@ namespace ast
 
             body->dont_create_new_env = true;
             ret &= body->typeCheck(symTable);
+            body->dont_create_new_env = false;
 
             symTable->popEnv();
 
@@ -1020,6 +1279,109 @@ namespace ast
             symTable->addToEnv(idNode->id, idNode);
 
             return ret;
+        }
+
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+
+            auto varTable = cgenContext->varTable;
+            auto functionTable = cgenContext->funcTable;
+            assert(declType != nullptr);
+
+            assert(varTable->table.size() == 1);      // should be at TU level
+            assert(functionTable->table.size() == 1); // just for safety
+
+            FunctionType *funcType = dynamic_cast<FunctionType *>(declType);
+            assert(funcType != nullptr);
+            auto llvmFuncType = funcType->llvmFuncType(cgenContext);
+            Function *func = Function::Create(llvmFuncType, Function::ExternalLinkage, declID, cgenContext->module.get());
+
+            for (size_t i = 0; i < argNames.size(); i++)
+            {
+                func->getArg(i)->setName(argNames[i]);
+            }
+
+            functionTable->addToEnv(declID, func);
+
+            BasicBlock *bb = BasicBlock::Create(*cgenContext->context, "entry", func);
+            cgenContext->builder->SetInsertPoint(bb);
+
+            varTable->createNewEnv();
+
+            for (auto &arg : func->args())
+            {
+                auto argName = arg.getName();
+                AllocaInst *alloca = cgenContext->builder->CreateAlloca(arg.getType(), nullptr, argName);
+                cgenContext->builder->CreateStore(&arg, alloca);
+                varTable->addToEnv(argName.str(), alloca);
+            }
+
+            yyCompoundStatement *body = dynamic_cast<yyCompoundStatement *>(nodes[2]);
+            assert(body != nullptr);
+
+            body->dont_create_new_env = true;
+            auto body_val = body->codeGen(cgenContext);
+            body->dont_create_new_env = false;
+
+            // add 'return void' only if the function's return type is void
+
+            auto retType = dynamic_cast<SimpleType *>(funcType->returnType);
+
+            if (retType != nullptr && retType->simpleType == TYPE_VOID)
+            {
+                cgenContext->builder->CreateRetVoid();
+            }
+
+            // remove dead instructions(including more terminals!) after the last terminal in each basic block..
+            // if not done, then the verifyFunction complains: Terminal found in middle of Basic block
+            // although the code is correct & runs on llvm interpreter
+            for (auto bb = func->begin(); bb != func->end();)
+            {
+
+                bool terminal_found = false;
+                auto i = bb->begin();
+                while (i != bb->end())
+                {
+                    if (terminal_found)
+                    {
+                        i = i->eraseFromParent();
+                    }
+                    else
+                    {
+                        if (i->isTerminator())
+                        {
+                            terminal_found = true;
+                        }
+                        i++;
+                    }
+                }
+                // remove dead bb's
+                if (bb->empty())
+                {
+                    bb = bb->eraseFromParent();
+                }
+                else
+                {
+                    bb++;
+                }
+            }
+
+            // we may not have a return statement in the function body
+            // verifyFunction will detect it
+
+            varTable->popEnv();
+
+            if (verifyFunction(*func, &errs()))
+            {
+                std::cerr << "\n[Line No " << this->line_no << "] Fatal Error: Codegen for Function " << declID << " didn't pass LLVM's verifyFunction" << std::endl;
+                std::cerr << "This most probably happened because function didn't have return statement in all control paths" << std::endl;
+                std::cerr << "Printing module so far.." << std::endl;
+                cgenContext->module->print(errs(), nullptr);
+                std::cerr << "Compilation Failed... Aborting.." << std::endl;
+                exit(1);
+            }
+
+            return body_val;
         }
     };
 
@@ -1081,6 +1443,18 @@ namespace ast
         OR_ASSIGN,
     };
 
+    enum UnaryOp
+    {
+        PL,
+        NEG,
+        PRE_INC,
+        PRE_DEC,
+        POST_INC,
+        POST_DEC,
+        NOT,
+        LOGICAL_NOT
+    };
+
     class yyAssignmentExpression : public yyAST
     {
     public:
@@ -1116,6 +1490,88 @@ namespace ast
             this->my_type = lhs->my_type;
 
             return ret;
+        }
+
+        Value *codeGenLHSAssign(CodeGenContext *CodeGenContext, yyAST *lhs)
+        {
+            // For now we only support direct assignment to variables
+            // so the lhs should be an identifier
+            yyIdentifier *id = dynamic_cast<yyIdentifier *>(lhs);
+            assert(id != nullptr);
+            auto varTable = CodeGenContext->varTable;
+            auto var = varTable->getFromEnv(id->id);
+            // var is a location in memory
+            return var;
+        }
+
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            assert(nodes.size() == 2);
+            yyAST *lhs = nodes[0];
+            yyAST *rhs = nodes[1];
+
+            auto lhs_loc = codeGenLHSAssign(cgenContext, lhs);
+
+            auto rhs_val = rhs->codeGen(cgenContext);
+
+            assert(lhs_loc != nullptr && rhs_val != nullptr);
+            Value *tmp = nullptr;
+
+            if (binaryOp == ASSIGN)
+            {
+                cgenContext->builder->CreateStore(rhs_val, lhs_loc);
+                return rhs_val;
+            }
+
+            auto lhs_val = lhs->codeGen(cgenContext); // value of lhs after evaluating rhs
+
+            switch (binaryOp)
+            {
+            case ASSIGN:
+                assert(false); // should not reach here
+                break;
+            case MUL_ASSIGN:
+                tmp = cgenContext->builder->CreateMul(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            case DIV_ASSIGN:
+                tmp = cgenContext->builder->CreateSDiv(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            case MOD_ASSIGN:
+                tmp = cgenContext->builder->CreateSRem(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            case ADD_ASSIGN:
+                tmp = cgenContext->builder->CreateAdd(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            case SUB_ASSIGN:
+                tmp = cgenContext->builder->CreateSub(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            case LEFT_ASSIGN:
+                tmp = cgenContext->builder->CreateShl(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            case RIGHT_ASSIGN:
+                tmp = cgenContext->builder->CreateAShr(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            case AND_ASSIGN:
+                tmp = cgenContext->builder->CreateAnd(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            case XOR_ASSIGN:
+                tmp = cgenContext->builder->CreateXor(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            case OR_ASSIGN:
+                tmp = cgenContext->builder->CreateOr(lhs_val, rhs_val);
+                cgenContext->builder->CreateStore(tmp, lhs_loc);
+                break;
+            }
+            return lhs_val;
         }
     };
 
@@ -1176,6 +1632,10 @@ namespace ast
             binaryOp = binOp;
         }
 
+        bool isFuncCall = false;
+
+        std::string funcName;
+
         bool typeCheck(SymbolTable<yyAST *> *symTable)
         {
             bool ret = true;
@@ -1185,6 +1645,7 @@ namespace ast
 
             if (binaryOp != BinaryOp::FUNC_CALL)
             {
+                isFuncCall = false;
                 ret &= left->typeCheck(symTable);
                 ret &= right->typeCheck(symTable);
 
@@ -1221,72 +1682,165 @@ namespace ast
             else
             {
                 // function call
+                isFuncCall = true;
+
                 ret &= left->typeCheck(symTable);
                 FunctionType *funcType = dynamic_cast<FunctionType *>(left->my_type);
-                assert(funcType != nullptr);
-                ret &= right->typeCheck(symTable);
 
-                bool containsEllipsis = false;
-
-                for (auto param : funcType->paramTypes)
+                if (funcType == nullptr)
                 {
-                    if (param->equals(new SimpleType(TYPE_ELLIPSIS)))
-                    {
-                        containsEllipsis = true;
-                        break;
-                    }
-                }
-
-                if (!containsEllipsis && funcType->paramTypes.size() != right->nodes.size() ||
-                    (containsEllipsis && right->nodes.size() < (funcType->paramTypes.size() - 1)))
-                {
-                    std::cerr << "[Line No " << this->line_no << "] Error: Incompatible number of arguments in function call: "
-                              << "Expected: " << funcType->paramTypes.size() << " but got " << right->nodes.size() << std::endl;
+                    std::cerr << "[Line No " << this->line_no << "] Error: Expected function type but got " << left->my_type->typeStr() << std::endl;
                     ret = false;
                 }
                 else
                 {
-                    if (!containsEllipsis)
+
+                    ret &= right->typeCheck(symTable);
+
+                    yyIdentifier *funcNameId = dynamic_cast<yyIdentifier *>(left);
+                    assert(funcNameId != nullptr);
+
+                    funcName = funcNameId->id;
+
+                    bool containsEllipsis = false;
+
+                    for (auto param : funcType->paramTypes)
                     {
-                        for (int i = 0; i < funcType->paramTypes.size(); i++)
+                        if (param->equals(new SimpleType(TYPE_ELLIPSIS)))
                         {
-                            if (!funcType->paramTypes[i]->equals(right->nodes[i]->my_type))
-                            {
-                                std::cerr << "[Line No " << this->line_no << "] Error: Incompatible types in function call: "
-                                          << "Expected: " << funcType->paramTypes[i]->typeStr() << " but got " << right->nodes[i]->my_type->typeStr() << std::endl;
-                                ret = false;
-                            }
+                            containsEllipsis = true;
+                            break;
                         }
+                    }
+
+                    if (!containsEllipsis && funcType->paramTypes.size() != right->nodes.size() ||
+                        (containsEllipsis && right->nodes.size() < (funcType->paramTypes.size() - 1)))
+                    {
+                        std::cerr << "[Line No " << this->line_no << "] Error: Incompatible number of arguments in function call: "
+                                  << "Expected: " << funcType->paramTypes.size() << " but got " << right->nodes.size() << std::endl;
+                        ret = false;
                     }
                     else
                     {
-                        for (int i = 0; i < funcType->paramTypes.size() - 1; i++)
+                        if (!containsEllipsis)
                         {
-                            if (!funcType->paramTypes[i]->equals(right->nodes[i]->my_type))
+                            for (int i = 0; i < funcType->paramTypes.size(); i++)
                             {
-                                std::cerr << "[Line No " << this->line_no << "] Error: Incompatible types in function call: "
-                                          << "Expected: " << funcType->paramTypes[i]->typeStr() << " but got " << right->nodes[i]->my_type->typeStr() << std::endl;
-                                ret = false;
+                                if (!funcType->paramTypes[i]->equals(right->nodes[i]->my_type))
+                                {
+                                    std::cerr << "[Line No " << this->line_no << "] Error: Incompatible types in function call: "
+                                              << "Expected: " << funcType->paramTypes[i]->typeStr() << " but got " << right->nodes[i]->my_type->typeStr() << std::endl;
+                                    ret = false;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            for (int i = 0; i < funcType->paramTypes.size() - 1; i++)
+                            {
+                                if (!funcType->paramTypes[i]->equals(right->nodes[i]->my_type))
+                                {
+                                    std::cerr << "[Line No " << this->line_no << "] Error: Incompatible types in function call: "
+                                              << "Expected: " << funcType->paramTypes[i]->typeStr() << " but got " << right->nodes[i]->my_type->typeStr() << std::endl;
+                                    ret = false;
+                                }
                             }
                         }
                     }
+                    this->my_type = funcType->returnType;
                 }
-                this->my_type = funcType->returnType;
             }
             return ret;
         }
-    };
 
-    enum UnaryOp
-    {
-        PL,
-        NEG,
-        PRE_INC,
-        PRE_DEC,
-        POST_INC,
-        POST_DEC,
-        NOT,
-        LOGICAL_NOT
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            assert(nodes.size() == 2);
+            yyAST *left = nodes[0];
+            yyAST *right = nodes[1];
+
+            if (binaryOp != FUNC_CALL)
+            {
+                Value *lhs_val = left->codeGen(cgenContext);
+                Value *rhs_val = right->codeGen(cgenContext);
+                Value *tmp = nullptr;
+                switch (binaryOp)
+                {
+                case BinaryOp::PLUS:
+                    tmp = cgenContext->builder->CreateAdd(lhs_val, rhs_val, "addtmp");
+                    break;
+                case BinaryOp::MINUS:
+                    tmp = cgenContext->builder->CreateSub(lhs_val, rhs_val, "subtmp");
+                    break;
+                case BinaryOp::MULT:
+                    tmp = cgenContext->builder->CreateMul(lhs_val, rhs_val, "multmp");
+                    break;
+                case BinaryOp::DIV:
+                    tmp = cgenContext->builder->CreateSDiv(lhs_val, rhs_val, "divtmp");
+                    break;
+                case BinaryOp::MOD:
+                    tmp = cgenContext->builder->CreateSRem(lhs_val, rhs_val, "modtmp");
+                    break;
+                case BinaryOp::OR:
+                    tmp = cgenContext->builder->CreateOr(lhs_val, rhs_val, "ortmp");
+                    break;
+                case BinaryOp::AND:
+                    tmp = cgenContext->builder->CreateAnd(lhs_val, rhs_val, "andtmp");
+                    break;
+                case BinaryOp::XOR:
+                    tmp = cgenContext->builder->CreateXor(lhs_val, rhs_val, "xortmp");
+                    break;
+                case BinaryOp::LSHIFT:
+                    tmp = cgenContext->builder->CreateShl(lhs_val, rhs_val, "lshifttmp");
+                    break;
+                case BinaryOp::RSHIFT:
+                    tmp = cgenContext->builder->CreateAShr(lhs_val, rhs_val, "rshifttmp");
+                    break;
+                case BinaryOp::GT:
+                    tmp = cgenContext->builder->CreateICmpSGT(lhs_val, rhs_val, "gttmp");
+                    break;
+                case BinaryOp::GTE:
+                    tmp = cgenContext->builder->CreateICmpSGE(lhs_val, rhs_val, "gtetmp");
+                    break;
+                case BinaryOp::LT:
+                    tmp = cgenContext->builder->CreateICmpSLT(lhs_val, rhs_val, "lttmp");
+                    break;
+                case BinaryOp::LOGICAL_AND:
+                    tmp = cgenContext->builder->CreateLogicalAnd(lhs_val, rhs_val, "andtmp");
+                    break;
+                case BinaryOp::LOGICAL_OR:
+                    tmp = cgenContext->builder->CreateLogicalOr(lhs_val, rhs_val, "ortmp");
+                    break;
+                case BinaryOp::EQUAL:
+                    tmp = cgenContext->builder->CreateICmpEQ(lhs_val, rhs_val, "eqtmp");
+                    break;
+                case BinaryOp::NOT_EQUAL:
+                    tmp = cgenContext->builder->CreateICmpNE(lhs_val, rhs_val, "netmp");
+                    break;
+                case BinaryOp::LTE:
+                    tmp = cgenContext->builder->CreateICmpSLE(lhs_val, rhs_val, "ltetmp");
+                    break;
+                case BinaryOp::FUNC_CALL:
+                    assert(false);
+                    break;
+                }
+                return tmp;
+            }
+
+            else
+            {
+                // func call
+                auto func = cgenContext->funcTable->getFromEnv(funcName);
+                assert(func != nullptr);
+
+                std::vector<Value *> args;
+                for (auto arg : right->nodes)
+                {
+                    args.push_back(arg->codeGen(cgenContext));
+                }
+                return cgenContext->builder->CreateCall(func, args, "calltmp");
+            }
+        }
     };
 
     class yyUnaryOp : public yyAST
@@ -1322,6 +1876,7 @@ namespace ast
             unaryOp = op;
             nodes.push_back(opr);
         }
+
         bool typeCheck(SymbolTable<yyAST *> *symTable)
         {
             bool ret = true;
@@ -1370,6 +1925,74 @@ namespace ast
             }
             return ret;
         }
+
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            assert(nodes.size() == 1);
+            yyAST *opr = nodes[0];
+            Value *opr_val = opr->codeGen(cgenContext);
+
+            switch (unaryOp)
+            {
+            case UnaryOp::PL:
+                return opr_val;
+            case UnaryOp::NEG:
+                return cgenContext->builder->CreateNeg(opr_val, "negtmp");
+            case UnaryOp::NOT:
+                return cgenContext->builder->CreateNot(opr_val, "nottmp");
+            case UnaryOp::LOGICAL_NOT:
+                return cgenContext->builder->CreateNot(opr_val, "logicalnottmp");
+                // TODO Test above ^^^
+            default:
+                break;
+            }
+            // unary assignment operators
+
+            yyIdentifier *idNode = dynamic_cast<yyIdentifier *>(opr);
+
+            if (idNode == nullptr)
+            {
+                std::cerr << "[Line No " << this->line_no << "] Error: Invalid lvalue for unary assignment operator" << std::endl;
+                // TODO: can move to type check phase
+                std::cerr << "Fatal: "
+                          << "Not supported error recovery for errors in codegen stage yet.." << std::endl;
+                exit(1);
+                return nullptr;
+            }
+
+            Value *opr_loc = cgenContext->varTable->getFromEnv(idNode->id);
+
+            assert(opr_loc != nullptr);
+            auto c1 = ConstantInt::get(*(cgenContext->context), APInt(32, 1, true));
+
+            Value *tmp;
+
+            switch (unaryOp)
+            {
+            case UnaryOp::PRE_INC:
+                tmp = cgenContext->builder->CreateAdd(opr_val, c1, "preinctmp");
+                cgenContext->builder->CreateStore(tmp, opr_loc);
+                break;
+            case UnaryOp::PRE_DEC:
+                tmp = cgenContext->builder->CreateSub(opr_val, c1, "predectmp");
+                cgenContext->builder->CreateStore(tmp, opr_loc);
+                break;
+            case UnaryOp::POST_INC:
+                tmp = cgenContext->builder->CreateAdd(opr_val, c1, "postinctmp");
+                cgenContext->builder->CreateStore(tmp, opr_loc);
+                tmp = opr_val;
+                break;
+            case UnaryOp::POST_DEC:
+                tmp = cgenContext->builder->CreateSub(opr_val, c1, "postdectmp");
+                cgenContext->builder->CreateStore(tmp, opr_loc);
+                tmp = opr_val;
+                break;
+            default:
+                assert(false);
+                break;
+            }
+            return tmp;
+        }
     };
 
     class yyArgumentExpressionList : public yyAST
@@ -1387,7 +2010,7 @@ namespace ast
     public:
         std::string name()
         {
-            return "yyEllipsis";
+            return "yyJumpStatement";
         }
         bool typeCheck(SymbolTable<yyAST *> *symTable)
         {
@@ -1409,6 +2032,13 @@ namespace ast
             bool res = nodes[0]->typeCheck(symTable);
             my_type = nodes[0]->my_type;
             return res;
+        }
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            assert(nodes.size() == 1);
+            Value *ret_val = nodes[0]->codeGen(cgenContext);
+            cgenContext->builder->CreateRet(ret_val);
+            return ret_val;
         }
     };
 
@@ -1458,6 +2088,65 @@ namespace ast
             }
             return res;
         }
+
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            assert(nodes.size() == 3 || nodes.size() == 2);
+            if (nodes.size() == 3)
+            {
+                // if then else
+                Value *cond = nodes[0]->codeGen(cgenContext);
+                assert(cond != nullptr);
+                Function *func = cgenContext->builder->GetInsertBlock()->getParent();
+                BasicBlock *then_block = BasicBlock::Create(*(cgenContext->context), "then", func);
+                BasicBlock *else_block = BasicBlock::Create(*(cgenContext->context), "else");
+                BasicBlock *merge_block = BasicBlock::Create(*(cgenContext->context), "ifcont");
+
+                cgenContext->builder->CreateCondBr(cond, then_block, else_block);
+
+                cgenContext->builder->SetInsertPoint(then_block);
+
+                auto then_val = nodes[1]->codeGen(cgenContext);
+
+                cgenContext->builder->CreateBr(merge_block);
+                then_block = cgenContext->builder->GetInsertBlock();
+
+                func->getBasicBlockList().push_back(else_block);
+                cgenContext->builder->SetInsertPoint(else_block);
+
+                auto else_val = nodes[2]->codeGen(cgenContext);
+
+                cgenContext->builder->CreateBr(merge_block);
+                else_block = cgenContext->builder->GetInsertBlock();
+
+                func->getBasicBlockList().push_back(merge_block);
+                cgenContext->builder->SetInsertPoint(merge_block);
+
+                return then_val;
+            }
+            else
+            {
+                // if then
+                Value *cond = nodes[0]->codeGen(cgenContext);
+                assert(cond != nullptr);
+                Function *func = cgenContext->builder->GetInsertBlock()->getParent();
+                BasicBlock *then_block = BasicBlock::Create(*(cgenContext->context), "then", func);
+                BasicBlock *merge_block = BasicBlock::Create(*(cgenContext->context), "ifcont");
+
+                cgenContext->builder->CreateCondBr(cond, then_block, merge_block);
+
+                cgenContext->builder->SetInsertPoint(then_block);
+
+                auto then_val = nodes[1]->codeGen(cgenContext);
+
+                cgenContext->builder->CreateBr(merge_block);
+
+                func->getBasicBlockList().push_back(merge_block);
+                cgenContext->builder->SetInsertPoint(merge_block);
+
+                return then_val;
+            }
+        }
     };
 
     class yyWhileLoop : public yyAST
@@ -1486,6 +2175,37 @@ namespace ast
             my_type = nodes[1]->my_type;
             return res;
         }
+
+        Value *codeGen(CodeGenContext *cgenContext)
+        {
+            assert(nodes.size() == 2);
+            Function *func = cgenContext->builder->GetInsertBlock()->getParent();
+            BasicBlock *cond_block = BasicBlock::Create(*(cgenContext->context), "cond", func);
+            BasicBlock *body_block = BasicBlock::Create(*(cgenContext->context), "body");
+            BasicBlock *merge_block = BasicBlock::Create(*(cgenContext->context), "whilecont");
+
+            cgenContext->builder->CreateBr(cond_block);
+
+            cgenContext->builder->SetInsertPoint(cond_block);
+
+            Value *cond = nodes[0]->codeGen(cgenContext);
+            assert(cond != nullptr);
+            cgenContext->builder->CreateCondBr(cond, body_block, merge_block);
+
+            func->getBasicBlockList().push_back(body_block);
+            cgenContext->builder->SetInsertPoint(body_block);
+
+            auto body_val = nodes[1]->codeGen(cgenContext);
+
+            cgenContext->builder->CreateBr(cond_block);
+            body_block = cgenContext->builder->GetInsertBlock();
+
+            func->getBasicBlockList().push_back(merge_block);
+            cgenContext->builder->SetInsertPoint(merge_block);
+
+            return body_val;
+        }
     };
+
 }
 #endif
