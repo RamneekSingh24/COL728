@@ -13,7 +13,7 @@
 using namespace std;
 using namespace ast;
 
-yyTU* topLevelTU = new yyTU();
+extern yyTU* topLevelTU;
 
 // stuff from flex that bison needs to know about:
 extern "C" int yylex();
