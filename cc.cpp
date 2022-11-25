@@ -4,6 +4,7 @@
 #include <iostream>
 #include "ast.h"
 #include "SymbolTable.h"
+#include "code_optimization.h"
 #include "c.tab.hpp"
 
 extern "C" int yylex();
@@ -50,27 +51,25 @@ int main(int argc, char **argv)
 
   if (ret != 0)
   {
-    std::cerr << "Compilation failed!" << std::endl;
+    std::cerr << "Compilation failed! [Parsing]" << std::endl;
   }
   else
   {
     SymbolTable<yyAST *> *symTable = new SymbolTable<yyAST *>();
     if (!topLevelTU->envCheck(symTable))
     {
-      std::cerr << "Compilation failed!" << std::endl;
+      std::cerr << "Compilation failed! [Environment check]" << std::endl;
+      return 1;
     }
     else
     {
       assert(symTable->table.size() == 1);
-      // if (verbose)
-      // {
-      //   topLevelTU->print();
-      // }
       SymbolTable<yyAST *> *symTable = new SymbolTable<yyAST *>();
 
       if (!topLevelTU->typeCheck(symTable))
       {
-        std::cerr << "Compilation failed!" << std::endl;
+        std::cerr << "Compilation failed! [Type Check]" << std::endl;
+        return 1;
       }
       else
       {
@@ -95,16 +94,39 @@ int main(int argc, char **argv)
           if (verbose)
           {
             std::cout << "Code generation successful!" << std::endl;
+            context->module->print(errs(), nullptr);
           }
           // only print the code in non-verbose mode
-          context->module->print(errs(), nullptr);
         }
         else
         {
-          std::cerr << "Code generation failed!" << std::endl;
+          std::cerr << "Code generation failed! [Code Gen]" << std::endl;
+          return 1;
         }
         std::cout << std::flush;
+
+        CodeOptContext *codeOptContext = new CodeOptContext(context->context.get(),
+                                                            context->module.get(),
+                                                            context->builder.get());
+
+        optimize(codeOptContext);
+
+        if (!verifyModule(*context->module, &errs()))
+        {
+          if (verbose)
+          {
+            std::cout << "Code optimization successful! [Code Opt]" << std::endl;
+          }
+
+          // only print the code in non-verbose mode
+          context->module->print(outs(), nullptr);
+        }
+        else
+        {
+          return 1;
+        }
       }
     }
   }
+  return 0;
 }

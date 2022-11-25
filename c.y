@@ -9,6 +9,8 @@
 %{
 #include <cstdio>
 #include <iostream>
+#include <stdexcept>
+
 #include "ast.h"
 using namespace std;
 using namespace ast;
@@ -316,14 +318,15 @@ assignment_operator
 expression
 	: assignment_expression {$$ = new yyExpression($1);}
 	| expression ',' assignment_expression
-	/* TODO
 	{
-	    yyExpression* dollar_1_casted = dynamic_cast<yyExpression*> ($1);
+		throw std::logic_error("Line No: " + std::to_string(yylineno)  + ", multiple expressions using ',' Not implemented yet");
+	    /*
+		yyExpression* dollar_1_casted = dynamic_cast<yyExpression*> ($1);
 	    assert(dollar_1_casted != nullptr);
 	    dollar_1_casted->addAssignmentExpression($3);
 	    $$ = $1;
+		*/
 	}
-	*/
 	;
 
 constant_expression
@@ -351,11 +354,11 @@ declaration_specifiers
 
 init_declarator_list
 	: init_declarator {$$ = new yyAST(); $$->addNode($1);}
-	| init_declarator_list ',' init_declarator // TODO: not impl. $$ = $1; $$->addNode($3);
+	| init_declarator_list ',' init_declarator {throw std::logic_error("Line No: " + std::to_string(yylineno)  + ", multiple declaration using ',' Not implemented yet");}
 	;
 
 init_declarator
-	: declarator '=' initializer
+	: declarator '=' initializer {throw std::logic_error("Line No: " + std::to_string(yylineno)  + ", decl = init Not implemented yet");}
 	| declarator {$$ = $1;}
 	;
 

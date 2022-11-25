@@ -21,11 +21,9 @@
 #ifndef AST_H
 #define AST_H
 
-// TODO: Compact the AST for codegen (remove unnecessary nodes)
-// TODO: HINT : declare global variables / functions in header file as static. Not working !!
-// recursive calls from this file a getting different values
 // TODO: check no seg faults in case of err recovery
-// TODO: unnecessary load of lhs in assignment operations: `t = b`
+
+// TODO: double not supported yet
 
 extern int yylineno;
 
@@ -53,14 +51,6 @@ namespace ast
             funcTable = new SymbolTable<llvm::Function *>();
         }
     };
-
-    // static auto context = std::make_unique<LLVMContext>();
-    // static auto module = std::make_unique<Module>("col728", *context);
-    // static auto builder = std::make_unique<IRBuilder<>>(*context);
-    // static std::unordered_map<std::string, Value *> stringLiterals;
-
-    // static SymbolTable<llvm::Value *> *varTable = new SymbolTable<llvm::Value *>();
-    // static SymbolTable<llvm::Function *> *functionTable = new SymbolTable<llvm::Function *>();
 
     enum yySimpleType
     {
@@ -1652,13 +1642,144 @@ namespace ast
                 if (!left->my_type->equals(right->my_type))
                 {
                     std::cerr << "[Line No " << this->line_no << "] Error: Incompatible types in binary operation: "
-                              << "Expected: " << left->my_type->typeStr() << " but got " << right->my_type->typeStr() << std::endl;
+                              << "Expected: " << left->my_type->typeStr() << " and  " << right->my_type->typeStr() << " to be of same type " << std::endl;
                     ret = false;
                 }
                 else
                 {
-                    // TODO : Currently not checking str + str, bool + bool etc..
-                    //  `t + `t is passes the type check as of now
+                    switch (binaryOp)
+                    {
+                    case BinaryOp::PLUS:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation + " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::MINUS:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation - " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::MULT:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation * " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::DIV:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation / " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::MOD:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation % " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::OR:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation | " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::AND:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation & " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::XOR:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation ^ " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::LSHIFT:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation << " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::RSHIFT:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation >> " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::GT:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation > " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::LT:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation < " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::GTE:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation >= " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::LTE:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation <= " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::EQUAL:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation == " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::NOT_EQUAL:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_INT)) || left->my_type->equals(new SimpleType(TYPE_FLOAT))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation != " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::LOGICAL_AND:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_BOOL))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation && " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case BinaryOp::LOGICAL_OR:
+                        if (!(left->my_type->equals(new SimpleType(TYPE_BOOL))))
+                        {
+                            std::cerr << "[Line No " << this->line_no << "] Error: " << left->my_type->typeStr() << " is not supported for binary operation || " << std::endl;
+                            ret = false;
+                        }
+                        break;
+                    case FUNC_CALL:
+                        assert(false);
+                        break;
+                    }
+
                     const static std::set<BinaryOp> logicalOperations = {
                         BinaryOp::LOGICAL_OR,
                         BinaryOp::LOGICAL_AND,
@@ -1767,58 +1888,232 @@ namespace ast
                 switch (binaryOp)
                 {
                 case BinaryOp::PLUS:
-                    tmp = cgenContext->builder->CreateAdd(lhs_val, rhs_val, "addtmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateAdd(lhs_val, rhs_val, "addtmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFAdd(lhs_val, rhs_val, "addtmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::MINUS:
-                    tmp = cgenContext->builder->CreateSub(lhs_val, rhs_val, "subtmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateSub(lhs_val, rhs_val, "subtmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFSub(lhs_val, rhs_val, "subtmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::MULT:
-                    tmp = cgenContext->builder->CreateMul(lhs_val, rhs_val, "multmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateMul(lhs_val, rhs_val, "multmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFMul(lhs_val, rhs_val, "multmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::DIV:
-                    tmp = cgenContext->builder->CreateSDiv(lhs_val, rhs_val, "divtmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateSDiv(lhs_val, rhs_val, "divtmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFDiv(lhs_val, rhs_val, "divtmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::MOD:
-                    tmp = cgenContext->builder->CreateSRem(lhs_val, rhs_val, "modtmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateSRem(lhs_val, rhs_val, "modtmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::OR:
-                    tmp = cgenContext->builder->CreateOr(lhs_val, rhs_val, "ortmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateOr(lhs_val, rhs_val, "ortmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::AND:
-                    tmp = cgenContext->builder->CreateAnd(lhs_val, rhs_val, "andtmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateAnd(lhs_val, rhs_val, "andtmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::XOR:
-                    tmp = cgenContext->builder->CreateXor(lhs_val, rhs_val, "xortmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateXor(lhs_val, rhs_val, "xortmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::LSHIFT:
-                    tmp = cgenContext->builder->CreateShl(lhs_val, rhs_val, "lshifttmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateShl(lhs_val, rhs_val, "lshifttmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::RSHIFT:
-                    tmp = cgenContext->builder->CreateAShr(lhs_val, rhs_val, "rshifttmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateAShr(lhs_val, rhs_val, "rshifttmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::GT:
-                    tmp = cgenContext->builder->CreateICmpSGT(lhs_val, rhs_val, "gttmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateICmpSGT(lhs_val, rhs_val, "gttmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFCmpOGT(lhs_val, rhs_val, "gttmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::GTE:
-                    tmp = cgenContext->builder->CreateICmpSGE(lhs_val, rhs_val, "gtetmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateICmpSGE(lhs_val, rhs_val, "gtetmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFCmpOGE(lhs_val, rhs_val, "gtetmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::LT:
-                    tmp = cgenContext->builder->CreateICmpSLT(lhs_val, rhs_val, "lttmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateICmpSLT(lhs_val, rhs_val, "lttmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFCmpOLT(lhs_val, rhs_val, "lttmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::LOGICAL_AND:
-                    tmp = cgenContext->builder->CreateLogicalAnd(lhs_val, rhs_val, "andtmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_BOOL)))
+                    {
+                        tmp = cgenContext->builder->CreateLogicalAnd(lhs_val, rhs_val, "andtmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::LOGICAL_OR:
-                    tmp = cgenContext->builder->CreateLogicalOr(lhs_val, rhs_val, "ortmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_BOOL)))
+                    {
+                        tmp = cgenContext->builder->CreateLogicalOr(lhs_val, rhs_val, "ortmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::EQUAL:
-                    tmp = cgenContext->builder->CreateICmpEQ(lhs_val, rhs_val, "eqtmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateICmpEQ(lhs_val, rhs_val, "eqtmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFCmpOEQ(lhs_val, rhs_val, "eqtmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_BOOL)))
+                    {
+                        tmp = cgenContext->builder->CreateICmpEQ(lhs_val, rhs_val, "eqtmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::NOT_EQUAL:
-                    tmp = cgenContext->builder->CreateICmpNE(lhs_val, rhs_val, "netmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateICmpNE(lhs_val, rhs_val, "netmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFCmpONE(lhs_val, rhs_val, "netmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_BOOL)))
+                    {
+                        tmp = cgenContext->builder->CreateICmpNE(lhs_val, rhs_val, "netmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::LTE:
-                    tmp = cgenContext->builder->CreateICmpSLE(lhs_val, rhs_val, "ltetmp");
+                    if (left->my_type->equals(new SimpleType(TYPE_INT)))
+                    {
+                        tmp = cgenContext->builder->CreateICmpSLE(lhs_val, rhs_val, "ltetmp");
+                    }
+                    else if (left->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        tmp = cgenContext->builder->CreateFCmpOLE(lhs_val, rhs_val, "ltetmp");
+                    }
+                    else
+                    {
+                        assert(false && "Type check error, should not have been caught in type check");
+                    }
                     break;
                 case BinaryOp::FUNC_CALL:
                     assert(false);
@@ -1838,7 +2133,17 @@ namespace ast
                 {
                     args.push_back(arg->codeGen(cgenContext));
                 }
-                return cgenContext->builder->CreateCall(func, args, "calltmp");
+
+                // if func return type if void use invoke
+                if (func->getReturnType()->isVoidTy())
+                {
+                    cgenContext->builder->CreateCall(func, args);
+                    return nullptr;
+                }
+                else
+                {
+                    return cgenContext->builder->CreateCall(func, args);
+                }
             }
         }
     };
@@ -1909,18 +2214,44 @@ namespace ast
                     this->my_type = new SimpleType(TYPE_INT);
                 }
             }
-            else // arithmetic
+            else if (unaryOp == UnaryOp::PL || unaryOp == UnaryOp::NEG)
             {
                 ret &= nodes[0]->typeCheck(symTable);
-                if (!nodes[0]->my_type->equals(new SimpleType(TYPE_INT)))
+                if (!nodes[0]->my_type->equals(new SimpleType(TYPE_INT)) && !nodes[0]->my_type->equals(new SimpleType(TYPE_FLOAT)))
                 {
-                    std::cerr << "[Line No " << this->line_no << "] Error: Incompatible types in unary operation: "
-                              << "Expected: " << (new SimpleType(TYPE_INT))->typeStr() << " but got " << nodes[0]->my_type->typeStr() << std::endl;
+                    std::cerr << "[Line No " << this->line_no << "] Error: Incompatible type in unary operation: "
+                              << "Expected: " << (new SimpleType(TYPE_INT))->typeStr() << " or " << (new SimpleType(TYPE_FLOAT))->typeStr() << " but got " << nodes[0]->my_type->typeStr() << std::endl;
                     ret = false;
                 }
                 else
                 {
-                    this->my_type = new SimpleType(TYPE_INT);
+                    this->my_type = nodes[0]->my_type;
+                }
+            }
+            else
+            {
+                assert(unaryOp == UnaryOp::PRE_INC || unaryOp == UnaryOp::PRE_DEC || unaryOp == UnaryOp::POST_INC || unaryOp == UnaryOp::POST_DEC);
+                ret &= nodes[0]->typeCheck(symTable);
+
+                yyIdentifier *idNode = dynamic_cast<yyIdentifier *>(nodes[0]);
+
+                if (idNode == nullptr)
+                {
+                    std::cerr << "[Line No " << this->line_no << "] Error: Invalid lvalue for unary assignment operator" << std::endl;
+                    ret = false;
+                }
+                else
+                {
+                    if (!nodes[0]->my_type->equals(new SimpleType(TYPE_INT)) && !nodes[0]->my_type->equals(new SimpleType(TYPE_FLOAT)))
+                    {
+                        std::cerr << "[Line No " << this->line_no << "] Error: Incompatible type in unary operation: "
+                                  << "Expected: " << (new SimpleType(TYPE_INT))->typeStr() << " or " << (new SimpleType(TYPE_FLOAT))->typeStr() << " but got " << nodes[0]->my_type->typeStr() << std::endl;
+                        ret = false;
+                    }
+                    else
+                    {
+                        this->my_type = nodes[0]->my_type;
+                    }
                 }
             }
             return ret;
@@ -1942,7 +2273,6 @@ namespace ast
                 return cgenContext->builder->CreateNot(opr_val, "nottmp");
             case UnaryOp::LOGICAL_NOT:
                 return cgenContext->builder->CreateNot(opr_val, "logicalnottmp");
-                // TODO Test above ^^^
             default:
                 break;
             }
@@ -1952,12 +2282,7 @@ namespace ast
 
             if (idNode == nullptr)
             {
-                std::cerr << "[Line No " << this->line_no << "] Error: Invalid lvalue for unary assignment operator" << std::endl;
-                // TODO: can move to type check phase
-                std::cerr << "Fatal: "
-                          << "Not supported error recovery for errors in codegen stage yet.." << std::endl;
-                exit(1);
-                return nullptr;
+                assert(false && "should have been caught in typeCheck");
             }
 
             Value *opr_loc = cgenContext->varTable->getFromEnv(idNode->id);
