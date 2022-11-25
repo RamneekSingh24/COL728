@@ -33,6 +33,8 @@ extern int sym_type(const char *);  /* returns type from symbol table */
 
 static void comment(void);
 static int check_type(void);
+static char* yytextsafe(void);
+
 #define YY_DECL extern "C" int yylex()
 %}
 
@@ -88,19 +90,19 @@ static int check_type(void);
 
 {L}{A}*					{ return check_type(); }
 
-{HP}{H}+{IS}?				{yylval.int_val = atoi(yytext); return I_CONSTANT; }
-{NZ}{D}*{IS}?				{yylval.int_val = atoi(yytext); return I_CONSTANT; }
-"0"{O}*{IS}?				{yylval.int_val = atoi(yytext); return I_CONSTANT; }
-{CP}?"'"([^'\\\n]|{ES})+"'"		{yylval.int_val = atoi(yytext); return I_CONSTANT; }
+{HP}{H}+{IS}?				{yylval.int_val = atoi(yytextsafe()); return I_CONSTANT; }
+{NZ}{D}*{IS}?				{yylval.int_val = atoi(yytextsafe()); return I_CONSTANT; }
+"0"{O}*{IS}?				{yylval.int_val = atoi(yytextsafe()); return I_CONSTANT; }
+{CP}?"'"([^'\\\n]|{ES})+"'"		{yylval.int_val = atoi(yytextsafe()); return I_CONSTANT; }
 
-{D}+{E}{FS}?				{yylval.float_val = atof(yytext); return F_CONSTANT; }
-{D}*"."{D}+{E}?{FS}?			{yylval.float_val = atof(yytext);  return F_CONSTANT; }
-{D}+"."{E}?{FS}?			{yylval.float_val = atof(yytext); return F_CONSTANT; }
-{HP}{H}+{P}{FS}?			{yylval.float_val = atof(yytext); return F_CONSTANT; }
-{HP}{H}*"."{H}+{P}{FS}?			{yylval.float_val = atof(yytext); ;return F_CONSTANT; }
-{HP}{H}+"."{P}{FS}?			{yylval.float_val = atof(yytext); return F_CONSTANT; }
+{D}+{E}{FS}?				{yylval.float_val = atof(yytextsafe()); return F_CONSTANT; }
+{D}*"."{D}+{E}?{FS}?			{yylval.float_val = atof(yytextsafe());  return F_CONSTANT; }
+{D}+"."{E}?{FS}?			{yylval.float_val = atof(yytextsafe()); return F_CONSTANT; }
+{HP}{H}+{P}{FS}?			{yylval.float_val = atof(yytextsafe()); return F_CONSTANT; }
+{HP}{H}*"."{H}+{P}{FS}?			{yylval.float_val = atof(yytextsafe()); ;return F_CONSTANT; }
+{HP}{H}+"."{P}{FS}?			{yylval.float_val = atof(yytextsafe()); return F_CONSTANT; }
 
-({SP}?\"([^"\\\n]|{ES})*\"{WS}*)+	{ return STRING_LITERAL; }
+({SP}?\"([^"\\\n]|{ES})*\"{WS}*)+	{yylval.str_val = yytextsafe() ;return STRING_LITERAL; }
 
 "..."					{ return ELLIPSIS; }
 ">>="					{ return RIGHT_ASSIGN; }
@@ -176,6 +178,17 @@ static void comment(void)
                 break;
         }
     yyerror("unterminated comment");
+}
+
+static char* yytextsafe(void) {
+//     printf("%s, %d\n", yytext, yyleng);
+    char* rtn = new char[yyleng + 1];
+    int i;
+    for (i = 0; i < yyleng; i++) {
+        rtn[i] = yytext[i];
+    }
+    rtn[yyleng] = '\0';
+    return rtn;
 }
 
 static int check_type(void)

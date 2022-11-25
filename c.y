@@ -9,17 +9,19 @@
 %{
 #include <cstdio>
 #include <iostream>
+#include <stdexcept>
+
 #include "ast.h"
 using namespace std;
 using namespace ast;
 
-yyTU* topLevelTU = new yyTU();
+extern yyTU* topLevelTU;
 
 // stuff from flex that bison needs to know about:
 extern "C" int yylex();
 int yyparse();
 extern "C" FILE *yyin;
- 
+
 void yyerror(const char *s);
 %}
 
@@ -29,6 +31,7 @@ void yyerror(const char *s);
   char* str_val;   // "string type has a non-trivial copy constructor"
   ast::yyAST* ast_node;
   ast::UnaryOp un_op;
+  ast::AssignOp assign_op;
 }
 
 %type <ast_node> translation_unit
@@ -43,7 +46,9 @@ void yyerror(const char *s);
 %type <ast_node> and_expression equality_expression relational_expression shift_expression additive_expression
 %type <ast_node> multiplicative_expression cast_expression unary_expression postfix_expression primary_expression
 %type <un_op>    unary_operator
-%type <ast_node> argument_expression_list constant
+%type <ast_node> argument_expression_list constant pointer init_declarator_list init_declarator
+%type <ast_node> string type_qualifier
+%type <assign_op> assignment_operator
 
 
 %token	<str_val> IDENTIFIER STRING_LITERAL FUNC_NAME
@@ -59,7 +64,7 @@ void yyerror(const char *s);
 %token	TYPEDEF EXTERN STATIC AUTO REGISTER INLINE
 %token	CONST RESTRICT VOLATILE
 %token	BOOL CHAR SHORT INT LONG SIGNED UNSIGNED FLOAT DOUBLE VOID
-%token	COMPLEX IMAGINARY 
+%token	COMPLEX IMAGINARY
 %token	STRUCT UNION ENUM ELLIPSIS
 
 %token	CASE DEFAULT IF ELSE SWITCH WHILE DO FOR GOTO CONTINUE BREAK RETURN
@@ -74,7 +79,7 @@ void yyerror(const char *s);
 primary_expression
 	: IDENTIFIER {$$ = new yyIdentifier($1);}
 	| constant   {$$ = $1;}
-	| string
+	| string {$$ = $1;}
 	| '(' expression ')' {$$ = $2;}
 	| generic_selection
 	;
@@ -90,7 +95,7 @@ enumeration_constant		/* before it has been defined as such */
 	;
 
 string
-	: STRING_LITERAL
+	: STRING_LITERAL {$$ = new yyStringLiteral($1);}
 	| FUNC_NAME
 	;
 
@@ -134,8 +139,8 @@ postfix_expression
 	;
 
 argument_expression_list
-	: assignment_expression
-	| argument_expression_list ',' assignment_expression
+	: assignment_expression {$$ = new yyArgumentExpressionList(); $$->addNode($1);}
+	| argument_expression_list ',' assignment_expression {$$ = $1; $$->addNode($3);}
 	;
 
 unary_expression
@@ -291,30 +296,36 @@ conditional_expression
 assignment_expression
 	: conditional_expression {$$ = $1;}
 	| unary_expression assignment_operator assignment_expression
+	{
+	    $$ = new yyAssignmentExpression($1, $2, $3);
+	}
 	;
 
 assignment_operator
-	: '='
-	| MUL_ASSIGN
-	| DIV_ASSIGN
-	| MOD_ASSIGN
-	| ADD_ASSIGN
-	| SUB_ASSIGN
-	| LEFT_ASSIGN
-	| RIGHT_ASSIGN
-	| AND_ASSIGN
-	| XOR_ASSIGN
-	| OR_ASSIGN
+	: '='          {$$ = AssignOp::ASSIGN;}
+	| MUL_ASSIGN   {$$ = AssignOp::MUL_ASSIGN;}
+	| DIV_ASSIGN   {$$ = AssignOp::DIV_ASSIGN;}
+	| MOD_ASSIGN   {$$ = AssignOp::MOD_ASSIGN;}
+	| ADD_ASSIGN   {$$ = AssignOp::ADD_ASSIGN;}
+	| SUB_ASSIGN   {$$ = AssignOp::SUB_ASSIGN;}
+	| LEFT_ASSIGN   {$$ = AssignOp::LEFT_ASSIGN;}
+	| RIGHT_ASSIGN   {$$ = AssignOp::RIGHT_ASSIGN;}
+	| AND_ASSIGN   {$$ = AssignOp::AND_ASSIGN;}
+	| XOR_ASSIGN   {$$ = AssignOp::XOR_ASSIGN;}
+	| OR_ASSIGN   {$$ = AssignOp::OR_ASSIGN;}
 	;
 
 expression
 	: assignment_expression {$$ = new yyExpression($1);}
 	| expression ',' assignment_expression
 	{
-	    yyExpression* dollar_1_casted = dynamic_cast<yyExpression*> ($1);
+		throw std::logic_error("Line No: " + std::to_string(yylineno)  + ", multiple expressions using ',' Not implemented yet");
+	    /*
+		yyExpression* dollar_1_casted = dynamic_cast<yyExpression*> ($1);
 	    assert(dollar_1_casted != nullptr);
 	    dollar_1_casted->addAssignmentExpression($3);
 	    $$ = $1;
+		*/
 	}
 	;
 
@@ -324,17 +335,17 @@ constant_expression
 
 declaration
 	: declaration_specifiers ';'
-	| declaration_specifiers init_declarator_list ';'
+	| declaration_specifiers init_declarator_list ';' {$$ = new yyDeclaration($1, $2);}
 	| static_assert_declaration
 	;
 
 declaration_specifiers
 	: storage_class_specifier declaration_specifiers
 	| storage_class_specifier
-	| type_specifier declaration_specifiers
+	| type_specifier declaration_specifiers {$$ = $2; $$->addNode($1);}
 	| type_specifier {$$ = new yyDeclSpecifiers($1);}
-	| type_qualifier declaration_specifiers
-	| type_qualifier
+	| type_qualifier declaration_specifiers  {$$ = $2; $$->addNode($1);}
+	| type_qualifier {$$ = new yyDeclSpecifiers(); $$->addNode($1);}
 	| function_specifier declaration_specifiers
 	| function_specifier
 	| alignment_specifier declaration_specifiers
@@ -342,13 +353,13 @@ declaration_specifiers
 	;
 
 init_declarator_list
-	: init_declarator
-	| init_declarator_list ',' init_declarator
+	: init_declarator {$$ = new yyAST(); $$->addNode($1);}
+	| init_declarator_list ',' init_declarator {throw std::logic_error("Line No: " + std::to_string(yylineno)  + ", multiple declaration using ',' Not implemented yet");}
 	;
 
 init_declarator
-	: declarator '=' initializer
-	| declarator
+	: declarator '=' initializer {throw std::logic_error("Line No: " + std::to_string(yylineno)  + ", decl = init Not implemented yet");}
+	| declarator {$$ = $1;}
 	;
 
 storage_class_specifier
@@ -362,7 +373,7 @@ storage_class_specifier
 
 type_specifier
 	: VOID  {$$ = new yyTypeSpecifier(yySimpleType::TYPE_VOID);}
-	| CHAR
+	| CHAR  {$$ = new yyTypeSpecifier(yySimpleType::TYPE_CHAR);}
 	| SHORT
 	| INT   {$$ = new yyTypeSpecifier(yySimpleType::TYPE_INT);}
 	| LONG
@@ -442,7 +453,7 @@ atomic_type_specifier
 	;
 
 type_qualifier
-	: CONST
+	: CONST {$$ = new yyTypeQualifier(TypeQualifier::CONST);}
 	| RESTRICT
 	| VOLATILE
 	| ATOMIC
@@ -459,8 +470,8 @@ alignment_specifier
 	;
 
 declarator
-	: pointer direct_declarator
-	| direct_declarator
+	: pointer direct_declarator {$$ = new yyDeclarator($1, $2);}
+	| direct_declarator {$$ = new yyDeclarator($1);}
 	;
 
 direct_declarator
@@ -483,8 +494,8 @@ direct_declarator
 pointer
 	: '*' type_qualifier_list pointer
 	| '*' type_qualifier_list
-	| '*' pointer
-	| '*'
+	| '*' pointer {$$ = $2; $$->addNode(new yyPointer());}
+	| '*' {$$ = new yyAST(); $$->addNode(new yyPointer());}
 	;
 
 type_qualifier_list
@@ -495,6 +506,12 @@ type_qualifier_list
 
 parameter_type_list
 	: parameter_list ',' ELLIPSIS
+	{
+	  yyParameterList* dollar_1_casted = dynamic_cast<yyParameterList*> ($1);
+      assert(dollar_1_casted != nullptr);
+	  dollar_1_casted->addParam(new yyEllipsis());
+	  $$ = dollar_1_casted;
+    }
 	| parameter_list {$$ = $1;}
 	;
 
@@ -588,11 +605,11 @@ static_assert_declaration
 
 statement
 	: labeled_statement
-	| compound_statement
+	| compound_statement {$$ = $1;}
 	| expression_statement {$$ = $1;}
 	| selection_statement
-	| iteration_statement
-	| jump_statement
+	| iteration_statement {$$ = $1;}
+	| jump_statement {$$ = $1;}
 	;
 
 labeled_statement
@@ -608,7 +625,7 @@ compound_statement
         yyCompoundStatement* cmpndStatement = new yyCompoundStatement();
 
         for (auto item: $2->nodes) {
-            cmpndStatement->addItem(item);
+            cmpndStatement->addBlockItem(item);
         }
 
         $$ = cmpndStatement;
@@ -632,12 +649,28 @@ expression_statement
 
 selection_statement
 	: IF '(' expression ')' statement ELSE statement
+	{
+	    $$ = new yyIfThenElse();
+	    $$->addNode($3);
+	    $$->addNode($5);
+	    $$->addNode($7);
+	}
 	| IF '(' expression ')' statement
+    {
+        $$ = new yyIfThenElse();
+        $$->addNode($3);
+        $$->addNode($5);
+    }
 	| SWITCH '(' expression ')' statement
 	;
 
 iteration_statement
 	: WHILE '(' expression ')' statement
+	{
+	    $$ = new yyWhileLoop();
+	    $$->addNode($3);
+	    $$->addNode($5);
+	}
 	| DO statement WHILE '(' expression ')' ';'
 	| FOR '(' expression_statement expression_statement ')' statement
 	| FOR '(' expression_statement expression_statement expression ')' statement
@@ -649,8 +682,8 @@ jump_statement
 	: GOTO IDENTIFIER ';'
 	| CONTINUE ';'
 	| BREAK ';'
-	| RETURN ';'
-	| RETURN expression ';'
+	| RETURN ';' {$$ = new yyReturnStatement();}
+	| RETURN expression ';' {$$ = new yyReturnStatement(); $$->addNode($2);}
 	;
 
 translation_unit
@@ -673,9 +706,7 @@ external_declaration
 	}
 	| declaration
 	{
-	    std::cout << "TODO: external_declaration prod 2\n";
-	    $$ = new yyDeclaration();
-	    // $$ = $1;
+	   $$ = $1;
 	}
 	;
 
